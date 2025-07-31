@@ -44,18 +44,17 @@ func main() {
 	}
 
 	// Example usage
-	ctx := context.Background()
-	_, err = rbacService.AddNewPermission(ctx, "users.read", "Read user data", 1)
+	_, err = rbacService.AddNewPermission("users.read", "Read user data", 1)
 	if err != nil {
 		log.Printf("Add permission error: %v", err)
 	}
 
-	_, err = rbacService.AddNewRole(ctx, "Admin", "Administrator role", []string{"users.read"}, 1)
+	_, err = rbacService.AddNewRole( "Admin", "Administrator role", []string{"users.read"}, 1)
 	if err != nil {
 		log.Printf("Add role error: %v", err)
 	}
 
-	err = rbacService.AssignRolesToEmployeeByNames(ctx, 123, []string{"Admin"}, 1)
+	err = rbacService.AssignRolesToEmployeeByNames(123, []string{"Admin"}, 1)
 	if err != nil {
 		log.Printf("Assign role error: %v", err)
 	}
