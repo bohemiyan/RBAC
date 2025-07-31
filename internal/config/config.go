@@ -1,36 +1,64 @@
 package config
 
 import (
+	"fmt"
 	"os"
-	"time"
+	"strconv"
 
-	"github.com/redis/go-redis/v9"
-	"github.com/your-org/rbac"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
+	"github.com/joho/godotenv"
 )
 
+// Config holds application configuration loaded from environment variables.
 type Config struct {
-	RBAC *rbac.Config
+	PostgresHost     string
+	PostgresPort     int
+	PostgresUser     string
+	PostgresPassword string
+	PostgresDB       string
+	RedisHost        string
+	RedisPort        int
+	RedisPassword    string
+	AppPort          int
+	CacheTTL		int
+	CachePrefix		string 
+	AutoMigrate		bool 
+	AuditLog		bool 
 }
 
-func Load() (*Config, error) {
-	db, err := gorm.Open(postgres.Open(os.Getenv("DB_DSN")), &gorm.Config{})
-	if err != nil {
-		return nil, err
+// LoadConfig loads environment variables into a Config struct.
+func LoadConfig() (*Config, error) {
+	// Load .env file
+	if err := godotenv.Load(); err != nil {
+		return nil, fmt.Errorf("failed to load .env file: %w", err)
 	}
 
-	rdb := redis.NewClient(&redis.Options{Addr: os.Getenv("REDIS_ADDR")})
+	// Parse Postgres port
+	postgresPort, err := strconv.Atoi(os.Getenv("POSTGRES_PORT"))
+	if err != nil {
+		return nil, fmt.Errorf("invalid POSTGRES_PORT: %w", err)
+	}
+
+	// Parse Redis port
+	redisPort, err := strconv.Atoi(os.Getenv("REDIS_PORT"))
+	if err != nil {
+		return nil, fmt.Errorf("invalid REDIS_PORT: %w", err)
+	}
+
+	// Parse App port
+	appPort, err := strconv.Atoi(os.Getenv("APP_PORT"))
+	if err != nil {
+		return nil, fmt.Errorf("invalid APP_PORT: %w", err)
+	}
 
 	return &Config{
-		RBAC: &rbac.Config{
-			DB:                      db,
-			RedisClient:             rdb,
-			CacheTTL:                30 * time.Minute,
-			CachePrefix:             "rbac:",
-			AutoMigrate:             true,
-			AutoMigrateCompositeKeys: true,
-			EnableAuditLogging:      true,
-		},
+		PostgresHost:     os.Getenv("POSTGRES_HOST"),
+		PostgresPort:     postgresPort,
+		PostgresUser:     os.Getenv("POSTGRES_USER"),
+		PostgresPassword: os.Getenv("POSTGRES_PASSWORD"),
+		PostgresDB:       os.Getenv("POSTGRES_DB"),
+		RedisHost:        os.Getenv("REDIS_HOST"),
+		RedisPort:        redisPort,
+		RedisPassword:    os.Getenv("REDIS_PASSWORD"),
+		AppPort:          appPort,
 	}, nil
 }

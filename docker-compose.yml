@@ -1,34 +1,21 @@
 version: '3.8'
-
 services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    ports:
-      - "8080:8080"
-    environment:
-      - DB_DSN=host=postgres user=rbac_user password=rbac_password dbname=rbac_db port=5432 sslmode=disable
-      - REDIS_ADDR=redis:6379
-    depends_on:
-      - postgres
-      - redis
-    networks:
-      - rbac-network
-
   postgres:
-    image: postgres:15
+    image: postgres:16
     environment:
-      POSTGRES_USER: rbac_user
-      POSTGRES_PASSWORD: rbac_password
+      POSTGRES_USER: rbac
+      POSTGRES_PASSWORD: securepassword
       POSTGRES_DB: rbac_db
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./scripts/migrations.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     ports:
       - "5432:5432"
-    networks:
-      - rbac-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rbac"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7
@@ -36,13 +23,12 @@ services:
       - redis_data:/data
     ports:
       - "6379:6379"
-    networks:
-      - rbac-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   postgres_data:
   redis_data:
-
-networks:
-  rbac-network:
-    driver: bridge

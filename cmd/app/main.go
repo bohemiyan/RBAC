@@ -1,35 +1,46 @@
 package main
 
 import (
-	"context"
+	"fmt"
 	"log"
 	"time"
 
+	"github.com/bohemiyan/RBAC/internal/config"
+	"github.com/bohemiyan/RBAC/internal/db"
+	"github.com/bohemiyan/RBAC/internal/rbac"
+	"github.com/bohemiyan/RBAC/internal/routes"
+	"github.com/bohemiyan/RBAC/zapLogger"
 	"github.com/gofiber/fiber/v2"
-	"github.com/redis/go-redis/v9"
-	"github.com/your-org/rbac"
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
 )
 
 func main() {
-	// Initialize database
-	dsn := "host=localhost user=postgres password=your-password dbname=rbac_db port=5432 sslmode=disable"
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	// Initialize zapLogger
+	logFile := zapLogger.Init()
+
+	// Load configuration
+	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		zapLogger.Log.Fatalf("Failed to load config: %v", err)
 	}
 
-	// Initialize Redis
-	rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
-	if _, err := rdb.Ping(context.Background()).Result(); err != nil {
-		log.Fatalf("Failed to connect to Redis: %v", err)
+	pgDB, err := db.NewPostgresDB(cfg)
+	if err != nil {
+		zapLogger.Log.Fatalf("Failed to initialize PostgreSQL: %v", err)
 	}
+	zapLogger.Log.Info("Successfully connected to PostgreSQL database")
+	defer pgDB.Close()
+
+	redisDB, err := db.NewRedisClient(cfg)
+	if err != nil {
+		zapLogger.Log.Fatalf("Failed to initialize Redis: %v", err)
+	}
+	zapLogger.Log.Info("Successfully connected to Redis")
+	defer redisDB.Close()
 
 	// Configure RBAC
-	cfg := rbac.Config{
-		DB:                       db,
-		RedisClient:              rdb,
+	rbacconfig := rbac.Config{
+		DB:                       pgDB.GormDB,
+		RedisClient:              redisDB,
 		CacheTTL:                 30 * time.Minute,
 		CachePrefix:              "rbac:",
 		AutoMigrate:              true,
@@ -37,20 +48,17 @@ func main() {
 		EnableAuditLogging:       true,
 	}
 
-	// Initialize RBAC service
-	rbacService, err := rbac.NewRBACService(cfg)
-	if err != nil {
-		log.Fatalf("Failed to initialize RBAC service: %v", err)
-	}
-
 	// Set up Fiber app
 	app := fiber.New()
 
-	// Example route with RBAC middleware
-	app.Get("/users", rbacService.RbacMiddleware("users.read"), func(c *fiber.Ctx) error {
-		return c.SendString("User data")
-	})
+	// Middleware
+	app.Use(zapLogger.FiberLoggingMiddleware(logFile))
+
+	// // Set up routes
+	routes.Setup(app, &rbacconfig)
 
 	// Start server
-	log.Fatal(app.Listen(":8080"))
+	addr := fmt.Sprintf(":%d", cfg.AppPort)
+	zapLogger.Log.Infof("Server started on port %d", cfg.AppPort)
+	log.Fatal(app.Listen(addr))
 }
