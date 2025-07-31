@@ -1,10 +1,10 @@
 RBAC Framework for Go
-The RBAC Framework is a high-performance, Redis-cached Role-Based Access Control (RBAC) system designed for Go applications. Built with GORM and Fiber, it provides robust permission management with roles, permissions, and audit logging, optimized for minimal database calls and efficient caching.
+The RBAC Framework is a high-performance, Redis-cached Role-Based Access Control (RBAC) system for Go applications. Built with GORM and Fiber, it provides robust permission management with roles, permissions, and audit logging, optimized for minimal database calls and efficient caching.
 📋 Table of Contents
 
 Features
 Installation
-Usage
+Quick Start
 API Overview
 Cache Management
 Audit Logging
@@ -13,13 +13,13 @@ License
 
 ✨ Features
 
-Role-Based Access Control: Manage permissions through roles assigned to employees.
-Redis Caching: Cache-first strategy with automatic invalidation for high performance.
-Audit Logging: Track all RBAC operations with configurable logging.
-Bulk Operations: Efficiently validate permissions for multiple employees.
-Fiber Middleware: Seamless integration for permission-based route protection.
-GORM Integration: Supports PostgreSQL, MySQL, and SQLite.
-Comprehensive APIs: Manage permissions, roles, and employee assignments with ease.
+Role-based permission management
+Redis caching with automatic invalidation
+Audit logging for all operations
+Bulk permission validation
+Fiber middleware for route protection
+GORM integration (PostgreSQL, MySQL, SQLite)
+Comprehensive APIs for permission and role management
 
 📦 Installation
 Prerequisites
@@ -33,6 +33,7 @@ Install the Module
 go get github.com/your-org/rbac
 
 Database Schema
+Ensure your database has the following schema (auto-migration is supported):
 CREATE TABLE permissions (
     permission_id SERIAL PRIMARY KEY,
     name VARCHAR(255) UNIQUE NOT NULL,
@@ -65,85 +66,90 @@ CREATE TABLE audits (
     timestamp TIMESTAMP
 );
 
-🚀 Usage
-Initialize the RBAC Service
+🚀 Quick Start
+
+Set Up DependenciesInitialize your Go project and install dependencies:
+go mod init my-project
+go get github.com/your-org/rbac github.com/redis/go-redis/v9 gorm.io/gorm gorm.io/driver/postgres github.com/gofiber/fiber/v2
+
+
+Initialize the RBAC ServiceCreate a main.go file with the following:
 package main
 
 import (
+    "context"
+    "log"
+    "time"
+
+    "github.com/gofiber/fiber/v2"
     "github.com/redis/go-redis/v9"
     "github.com/your-org/rbac"
     "gorm.io/driver/postgres"
     "gorm.io/gorm"
-    "time"
 )
 
 func main() {
     // Initialize database
-    db, _ := gorm.Open(postgres.Open("your-dsn"), &gorm.Config{})
-    
+    dsn := "host=localhost user=rbac_user password=rbac_password dbname=rbac_db port=5432 sslmode=disable"
+    db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+    if err != nil {
+        log.Fatalf("Failed to connect to database: %v", err)
+    }
+
     // Initialize Redis
-    rdb := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
-    
+    redisDB := redis.NewClient(&redis.Options{Addr: "localhost:6379"})
+    if _, err := redisDB.Ping(context.Background()).Result(); err != nil {
+        log.Fatalf("Failed to connect to Redis: %v", err)
+    }
+
     // Configure RBAC
-    cfg := rbac.Config{
+    rbacConfig := rbac.Config{
         DB:                      db,
-        RedisClient:             rdb,
+        RedisClient:             redisDB,
         CacheTTL:                30 * time.Minute,
         CachePrefix:             "rbac:",
         AutoMigrate:             true,
         AutoMigrateCompositeKeys: true,
         EnableAuditLogging:      true,
     }
-    
-    // Create RBAC service
-    rbacService, _ := rbac.NewRBACService(cfg)
-}
 
-Example: Managing Permissions and Roles
-// Add a permission
-permID, _ := rbacService.AddNewPermission(ctx, "users.read", "Read user data", 1)
+    // Initialize RBAC service
+    rbacService, err := rbac.NewRBACService(rbacConfig)
+    if err != nil {
+        log.Fatalf("Failed to initialize RBAC service: %v", err)
+    }
 
-// Add a role with permissions
-roleID, _ := rbacService.AddNewRole(ctx, "Admin", "Administrator role", []string{"users.read", "users.write"}, 1)
+    // Set up Fiber app
+    app := fiber.New()
 
-// Assign role to employee
-rbacService.AssignRolesToEmployeeByNames(ctx, 123, []string{"Admin"}, 1)
+    // Mock auth middleware (set employee_id)
+    app.Use(func(c *fiber.Ctx) error {
+        c.Locals("employee_id", 123)
+        return c.Next()
+    })
 
-Example: Permission Validation
-// Check single permission
-err := rbacService.ValidatePermission(ctx, 123, "users.read")
-if err != nil {
-    // Handle permission denied
-}
-
-// Check any permission (OR logic)
-err = rbacService.ValidateAnyPermission(ctx, 123, []string{"users.read", "users.edit"})
-
-// Check all permissions (AND logic)
-err = rbacService.ValidateAllPermissions(ctx, 123, []string{"users.read", "users.edit"})
-
-// Check role assignment
-err = rbacService.CompareEmpByRoleName(ctx, 123, "Admin")
-
-Example: Fiber Middleware
-import "github.com/gofiber/fiber/v2"
-
-func setupRoutes(app *fiber.App, rbacService *rbac.RBACService) {
-    api := app.Group("/api/v1")
-    
-    // Protected route
-    api.Get("/users", rbacService.RbacMiddleware("users.read"), func(c *fiber.Ctx) error {
+    // Example protected route
+    app.Get("/users", rbacService.RbacMiddleware("users.read"), func(c *fiber.Ctx) error {
         return c.SendString("User data")
     })
+
+    // Start server
+    log.Fatal(app.Listen(":8080"))
 }
 
-Example: Audit Logging
-// Retrieve audit logs
-logs, _ := rbacService.GetAuditLogs(ctx, nil, nil, nil, nil, 1)
-for _, log := range logs {
-    fmt.Printf("Action: %s, Resource: %s, Success: %v, Time: %v\n",
-        log["action"], log["resource"], log["success"], log["timestamp"])
-}
+
+Run the Application
+go run .
+
+
+Test the RBAC Service
+
+Add permissions: rbacService.AddNewPermission(ctx, "users.read", "Read user data", 1)
+Add roles: rbacService.AddNewRole(ctx, "Admin", "Administrator role", []string{"users.read"}, 1)
+Assign roles: rbacService.AssignRolesToEmployeeByNames(ctx, 123, []string{"Admin"}, 1)
+Validate permissions: rbacService.ValidatePermission(ctx, 123, "users.read")
+
+
 
 📚 API Overview
 Permission Management
@@ -197,34 +203,23 @@ RbacMiddleware(permission string) fiber.Handler
 
 🗄️ Cache Management
 
-Cache Keys:
-rbac:permissions:all: All permissions
-rbac:roles:all: All roles
-rbac:role:<name>:permissions: Permissions for a role
-rbac:employee:<id>:roles: Roles for an employee
-rbac:employee:<id>:permissions: Permissions for an employee
-
-
-Invalidation: Automatic on create, update, or delete operations.
-TTL: Configurable via Config.CacheTTL.
-Stats: Monitor hit rates and memory usage with GetCacheStats and GetCacheMemoryUsage.
+Keys: rbac:permissions:all, rbac:roles:all, rbac:role:<name>:permissions, rbac:employee:<id>:roles, rbac:employee:<id>:permissions
+Invalidation: Automatic on create/update/delete
+TTL: Configurable via Config.CacheTTL
+Monitoring: Use GetCacheStats and GetCacheMemoryUsage
 
 📝 Audit Logging
 
-Enabled: Configurable via Config.EnableAuditLogging.
-Logged Actions: All API calls (e.g., add/delete permissions, roles, validations).
-Querying: Filter by employee ID, action, time range with GetAuditLogs.
-Storage: Persisted in the audits table.
+Enabled via Config.EnableAuditLogging
+Logs all API operations (e.g., permission/role creation, validation)
+Query logs with GetAuditLogs by employee ID, action, or time range
 
 🤝 Contributing
 
 Clone: git clone github.com/your-org/rbac
 Install: go mod tidy
 Test: go test -v ./... or go test -race ./...
-Style: Follow Go best practices and use gofmt.
+Submit issues/pull requests: GitHub Issues
 
-Submit issues and pull requests at GitHub Issues.
 📄 License
-MIT License. See LICENSE for details.
-
-Built with ❤️ using Go, GORM, Redis, and Fiber
+MIT License. See LICENSE.
